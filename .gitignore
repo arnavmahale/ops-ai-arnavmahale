@@ -1,0 +1,16 @@
+key.json
+*.key.json
+gke-key.json
+.env
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.vscode/
+# one-shot setup scripts (contain hard-coded local paths/IDs)
+setup-gcp.sh
+setup-gcp-retry.sh
+deploy-gke.sh
+resume-deploy.sh
+diagnose.sh
+rebuild-and-restart.sh

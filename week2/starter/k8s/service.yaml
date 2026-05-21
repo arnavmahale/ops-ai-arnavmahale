@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: demand-api
+  labels:
+    app: demand-api
+
+spec:
+  type: LoadBalancer
+
+  selector:
+    app: demand-api
+
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8000
+    protocol: TCP
