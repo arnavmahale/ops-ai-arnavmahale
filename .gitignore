@@ -14,3 +14,13 @@ deploy-gke.sh
 resume-deploy.sh
 diagnose.sh
 rebuild-and-restart.sh
+cleanup.sh
+# Week 3: do NOT commit raw parquet (per README — too large)
+week3/data/
+*.parquet
+# But keep the small lookup parquet in backend/
+!week3/backend/zone_hour_avg_fare.parquet
+# submission staging
+submission/
+# pytest cache
+.pytest_cache/

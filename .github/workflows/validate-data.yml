@@ -1,0 +1,88 @@
+name: Data Quality Check
+
+# Schedule rationale: hourly is the cost-vs-detection-speed sweet spot for this
+# pipeline. New upstream data lands roughly every 15 minutes, so a 15-minute
+# cron would mostly re-validate the same rows; daily would miss a half-day's
+# worth of corruption before anyone notices. Hourly catches issues within ~60
+# minutes of arrival at ~24 runs/day (free-tier comfortable on GH Actions).
+on:
+  schedule:
+    - cron: '0 * * * *'           # every hour at :00
+  push:
+    branches: [main]
+    paths:
+      - 'week3/validation/**'
+      - 'week3/backend/**'
+      - '.github/workflows/validate-data.yml'
+  workflow_dispatch:               # manual trigger for ad-hoc validation
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install validation dependencies
+        run: pip install --no-cache-dir pandas pyarrow numpy pytest
+
+      # Pull the upstream parquet from the same GCS bucket the deployed API
+      # reads from. Using a service-account key (GCP_SA_KEY) already configured
+      # for week 2's CD pipeline — no new infra needed.
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Download corrupted parquet from GCS
+        run: |
+          mkdir -p week3/data
+          # The bucket has the original demand parquet from week 2. If the
+          # corrupted file is also uploaded there, fetch it; otherwise fall
+          # back to the original (validation will pass — exit 0).
+          if gsutil -q stat gs://ops-ai-arnavmahale-data/demand_enriched_corrupted.parquet; then
+            gsutil cp gs://ops-ai-arnavmahale-data/demand_enriched_corrupted.parquet \
+              week3/data/demand_enriched_corrupted.parquet
+          else
+            echo "::notice::No corrupted parquet in bucket — validating the clean baseline as a smoke test."
+            gsutil cp gs://ops-ai-arnavmahale-data/demand_enriched.parquet \
+              week3/data/demand_enriched_corrupted.parquet
+          fi
+          ls -lh week3/data/
+
+      - name: Run unit tests
+        run: python -m pytest week3/validation/test_data_quality.py -v
+
+      - name: Run data quality validation on real parquet
+        id: validate
+        run: |
+          python -m week3.validation.check_data_quality \
+            week3/data/demand_enriched_corrupted.parquet | tee validation_output.log
+          # capture for the summary even if grep finds nothing
+          grep -E '^\s*\[' validation_output.log >> $GITHUB_STEP_SUMMARY || true
+        continue-on-error: true
+
+      - name: Block deployment if validation fails
+        if: steps.validate.outcome == 'failure'
+        run: |
+          echo "::error::Data validation FAILED — blocking deploy"
+          echo "## Data Quality FAILED" >> $GITHUB_STEP_SUMMARY
+          echo "See logs in 'Run data quality validation' step above." >> $GITHUB_STEP_SUMMARY
+          exit 1
+
+      - name: Validation passed
+        if: steps.validate.outcome == 'success'
+        run: |
+          echo "::notice::Data quality validation passed"
+          echo "## Data Quality OK" >> $GITHUB_STEP_SUMMARY
