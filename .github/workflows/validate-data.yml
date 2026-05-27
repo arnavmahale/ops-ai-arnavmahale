@@ -66,23 +66,33 @@ jobs:
 
       - name: Run data quality validation on real parquet
         id: validate
+        # Capture stdout to a file *and* preserve the validator's exit code.
+        # `tee` would otherwise mask a non-zero exit unless pipefail is set
+        # and is the last command in the block.
         run: |
+          set +e
           python -m week3.validation.check_data_quality \
-            week3/data/demand_enriched_corrupted.parquet | tee validation_output.log
-          # capture for the summary even if grep finds nothing
-          grep -E '^\s*\[' validation_output.log >> $GITHUB_STEP_SUMMARY || true
+            week3/data/demand_enriched_corrupted.parquet > validation_output.log
+          rc=$?
+          cat validation_output.log
+          {
+            echo '## Data Quality Validation'
+            echo '```'
+            cat validation_output.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
         continue-on-error: true
 
       - name: Block deployment if validation fails
         if: steps.validate.outcome == 'failure'
         run: |
           echo "::error::Data validation FAILED — blocking deploy"
-          echo "## Data Quality FAILED" >> $GITHUB_STEP_SUMMARY
-          echo "See logs in 'Run data quality validation' step above." >> $GITHUB_STEP_SUMMARY
+          echo "## Result: FAILED — blocking downstream deploy" >> "$GITHUB_STEP_SUMMARY"
           exit 1
 
       - name: Validation passed
         if: steps.validate.outcome == 'success'
         run: |
           echo "::notice::Data quality validation passed"
-          echo "## Data Quality OK" >> $GITHUB_STEP_SUMMARY
+          echo "## Result: PASSED" >> "$GITHUB_STEP_SUMMARY"
