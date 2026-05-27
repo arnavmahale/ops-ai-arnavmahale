@@ -1,42 +1,58 @@
-# AIPI 561 — Week 2: Taxi Demand Forecasting API on GKE
+# AIPI 561 — Operationalizing AI
 
-**Author:** Arnav Mahale (arnav.mahale@duke.edu)
+Coursework for Duke AIPI 561 (Summer 2026). Each week extends the previous one;
+the same GitHub repo holds all weeks so deployment infrastructure (workflows,
+GCP project, GCS bucket) carries forward.
 
-A FastAPI service that serves a pre-trained LightGBM model predicting NYC taxi
-demand by zone and 15-minute window. Containerized with Docker, deployed to
-Google Kubernetes Engine, with CI/CD via GitHub Actions.
+**Author:** Arnav Mahale (`arnav.mahale@duke.edu`)
 
-## Repo layout
+## Layout
 
 ```
 .
 ├── .github/workflows/
-│   ├── ci.yml           # tests + Docker build (PRs to main, pushes to main/develop)
-│   └── cd.yml           # build + push to Artifact Registry + deploy to GKE (main only)
-├── week2/
-│   ├── backend/         # FastAPI app (main.py, data.py) + small lookup files
-│   ├── metadata/        # taxi zone lookups and reference PDFs
-│   └── starter/
-│       ├── Dockerfile   # multi-stage build, libgomp1 for LightGBM
-│       └── k8s/
-│           ├── configmap.yaml    # GCS bucket name
-│           ├── deployment.yaml   # init container + main container, probes, resources
-│           └── service.yaml      # LoadBalancer → external IP
-├── design_report.md     # operational decisions (probes, replicas, resources, CI/CD)
-├── architecture.md      # Mermaid diagram of GitHub → AR → GKE flow
-└── .gitignore           # excludes key.json and other secrets
+│   ├── ci.yml                ← week 2: test + Docker build on push/PR
+│   ├── cd.yml                ← week 2: build + push to Artifact Registry + GKE deploy
+│   └── validate-data.yml     ← week 3: scheduled data-quality check (hourly cron)
+├── week2/                    ← Deployment + CI/CD (taxi demand API on GKE)
+│   ├── README.md
+│   ├── design_report.md      ← 1-page operational decisions report
+│   ├── architecture.md       ← Mermaid diagram of GitHub → AR → GKE flow
+│   ├── backend/              ← FastAPI app
+│   ├── metadata/             ← taxi zone lookups
+│   ├── starter/
+│   │   ├── Dockerfile        ← multi-stage, libgomp1 for LightGBM
+│   │   └── k8s/              ← Deployment, Service, ConfigMap
+│   └── submission/           ← exact files uploaded to Canvas
+└── week3/                    ← Data quality validation + graceful degradation
+    ├── REPORT.md             ← 3-page report on issues, schedule, degradation
+    ├── REPORT.pdf
+    ├── backend/data.py       ← extended with check_and_log_data_quality() + cleanup
+    └── validation/           ← DataQualityValidator + pytest suite (12 tests)
 ```
 
-## Endpoints
+## Per-week summaries
 
-- `GET /health` — readiness/liveness probe target
-- `GET /api/heatmap?hour=&dow=&date=&holiday=` — zone demand for an hour
-- `GET /api/forecast?zone_id=&hour=&dow=&date=&steps=` — N-step forecast for a zone
-- `GET /api/recommendations?zone_id=&hour=&dow=&date=&n=&holiday=` — best pickup zones
+### Week 2 — Deploy taxi demand API to GKE
+LightGBM model wrapped in FastAPI, multi-stage Dockerfile, deployed to a 2-node
+GKE cluster (`operationalizing-ai`, `us-central1-a`) behind a LoadBalancer.
+GitHub Actions handles build, push to Artifact Registry, and rolling-update
+deploy on every push to `main`. Cluster + Artifact Registry repo were deleted
+after grading; the GCS bucket `gs://ops-ai-arnavmahale-data` is retained.
 
-## Running
+### Week 3 — Data quality validation
+Detects four issue classes in the corrupted upstream parquet
+(duplicates, out-of-range `trip_count`, variance collapse on
+`cbd_pricing_active`, rate drift on `is_holiday`). Validation runs in three
+layers — hourly GitHub Actions, API-startup logging, and inline cleanup on
+load — all of them transparent (logged) but never crashing the API. See
+`week3/REPORT.md`.
 
-The Kubernetes manifests under `week2/starter/k8s/` are filled in for the GCP
-project `ops-ai-arnavmahale` and the bucket `gs://ops-ai-arnavmahale-data`.
-The CD workflow auto-deploys on push to `main`. See `design_report.md` for
-operational rationale.
+## GCP project
+
+| Resource | Identifier |
+|---|---|
+| Project | `ops-ai-arnavmahale` |
+| GCS bucket | `gs://ops-ai-arnavmahale-data` |
+| Artifact Registry | `us-central1-docker.pkg.dev/ops-ai-arnavmahale/docker-repo` (deleted after week 2) |
+| GitHub Secret | `GCP_SA_KEY` — service-account JSON used by all workflows |

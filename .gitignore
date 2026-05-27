@@ -20,7 +20,8 @@ week3/data/
 *.parquet
 # But keep the small lookup parquet in backend/
 !week3/backend/zone_hour_avg_fare.parquet
-# submission staging
-submission/
+# Root-level submission staging (was used as a one-time scratch dir)
+/submission/
+# Per-week submission/ folders ARE committed as a record of what was uploaded to Canvas.
 # pytest cache
 .pytest_cache/
