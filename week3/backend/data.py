@@ -11,8 +11,9 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime, timedelta
 import json
-import requests
 from functools import lru_cache
+# `requests` is lazy-imported inside the one helper that uses it so this
+# module can be imported in CI environments without the API runtime deps.
 
 logger = logging.getLogger(__name__)
 if not logging.getLogger().handlers:
@@ -410,6 +411,7 @@ def _get_drive_time(from_zone: int, to_zone: int) -> int:
         # OSRM public API endpoint (free, open source)
         url = f"http://router.project-osrm.org/route/v1/driving/{from_coord['lon']},{from_coord['lat']};{to_coord['lon']},{to_coord['lat']}?overview=false"
 
+        import requests  # lazy-imported so this file works in CI without runtime deps
         response = requests.get(url, timeout=3)
         if response.status_code == 200:
             data = response.json()
