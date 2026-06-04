@@ -15,11 +15,15 @@ resume-deploy.sh
 diagnose.sh
 rebuild-and-restart.sh
 cleanup.sh
-# Week 3: do NOT commit raw parquet (per README — too large)
+# Week 3 / 4: do NOT commit raw parquets (per README — too large)
 week3/data/
+week4/data/
 *.parquet
 # But keep the small lookup parquet in backend/
 !week3/backend/zone_hour_avg_fare.parquet
+# Week 4 metrics JSON outputs (CI artifacts, not source)
+week4/metrics-*.json
+week4/drift-findings*.json
 # Root-level submission staging (was used as a one-time scratch dir)
 /submission/
 # Per-week submission/ folders ARE committed as a record of what was uploaded to Canvas.

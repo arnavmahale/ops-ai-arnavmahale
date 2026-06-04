@@ -1,0 +1,146 @@
+name: Drift Monitoring
+
+# Schedule rationale:
+#   Accuracy metrics need ground-truth labels, which lag the prediction by 24-48
+#   hours. Running more often than daily would just re-check the same labelled
+#   window. Hourly drift checks would also generate ~24x the cost for no extra
+#   signal. Daily at 09:00 UTC runs the monitor once new labels are available,
+#   right at the start of the EU+NA working day so any alerts land in business
+#   hours when humans can act on them.
+on:
+  schedule:
+    - cron: '0 9 * * *'              # daily at 09:00 UTC
+  push:
+    branches: [main]
+    paths:
+      - 'week4/scripts/**'
+      - '.github/workflows/monitor-drift.yml'
+  workflow_dispatch:                  # manual trigger for ad-hoc runs
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      issues: write                   # required for the alert step below
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install --no-cache-dir pandas pyarrow numpy scipy pytest
+
+      # Pull the upstream parquet from the same GCS bucket the week-3 workflow
+      # uses. The GCP_SA_KEY secret is already configured.
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Download week-4 parquet from GCS
+        run: |
+          mkdir -p week4/data
+          if gsutil -q stat gs://ops-ai-arnavmahale-data/demand_enriched_week4.parquet; then
+            gsutil cp gs://ops-ai-arnavmahale-data/demand_enriched_week4.parquet \
+              week4/data/demand_enriched_week4.parquet
+          else
+            echo "::warning::week-4 parquet not in bucket — using week-2 baseline as smoke test"
+            gsutil cp gs://ops-ai-arnavmahale-data/demand_enriched.parquet \
+              week4/data/demand_enriched_week4.parquet
+          fi
+          ls -lh week4/data/
+
+      - name: Run unit tests
+        run: python -m pytest week4/scripts/test_monitoring.py -v
+
+      - name: Compute monitoring metrics
+        id: metrics
+        run: |
+          set +e
+          python -m week4.scripts.compute_metrics \
+            week4/data/demand_enriched_week4.parquet \
+            --out week4/metrics-latest.json > metrics_stdout.log
+          rc=$?
+          cat metrics_stdout.log
+          {
+            echo '## Monitoring metrics'
+            echo '```'
+            cat metrics_stdout.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+        continue-on-error: true
+
+      - name: Detect drift patterns
+        id: drift
+        run: |
+          set +e
+          python -m week4.scripts.detect_drift \
+            week4/data/demand_enriched_week4.parquet \
+            --out week4/drift-findings.json > drift_stdout.log
+          rc=$?
+          cat drift_stdout.log
+          {
+            echo '## Drift findings'
+            echo '```'
+            cat drift_stdout.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+        continue-on-error: true
+
+      - name: Upload metrics + drift JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: monitoring-output
+          path: |
+            week4/metrics-latest.json
+            week4/drift-findings.json
+
+      # When monitoring detects critical drift or breached thresholds, open a
+      # GitHub issue tagged 'drift-alert' so ops sees it in the issue queue.
+      - name: Create GitHub issue on drift
+        if: steps.metrics.outcome == 'failure' || steps.drift.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = `Automated drift monitoring detected one or more issues on \`${context.sha.substr(0,7)}\`.\n\n`;
+            try {
+              const m = JSON.parse(fs.readFileSync('week4/metrics-latest.json'));
+              body += `**Metrics:** overall=${m.overall_breach}, critical=${m.n_critical}, warning=${m.n_warning}\n`;
+            } catch {}
+            try {
+              const d = JSON.parse(fs.readFileSync('week4/drift-findings.json'));
+              body += `**Drift patterns detected:** ${d.n_patterns} (verdict: ${d.verdict})\n`;
+            } catch {}
+            body += `\nSee artifact \`monitoring-output\` in the run logs for full JSON.`;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Drift monitoring alert — ${new Date().toISOString().slice(0,10)}`,
+              body,
+              labels: ['drift-alert', 'monitoring'],
+            });
+
+      - name: Fail the workflow if drift / breach found
+        if: steps.metrics.outcome == 'failure' || steps.drift.outcome == 'failure'
+        run: |
+          echo "::error::Monitoring detected critical drift or threshold breach"
+          exit 1
+
+      - name: Monitoring OK
+        if: steps.metrics.outcome == 'success' && steps.drift.outcome == 'success'
+        run: |
+          echo "::notice::Monitoring metrics and drift checks all green"
+          echo "## Result: ALL GREEN" >> "$GITHUB_STEP_SUMMARY"
