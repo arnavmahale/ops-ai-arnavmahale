@@ -1,0 +1,129 @@
+{
+  "roles": {
+    "engineer": {
+      "description": "Engineering team member",
+      "permissions": {
+        "view_employee_directory": true,
+        "view_project_details": true,
+        "view_own_salary": true,
+        "view_own_benefits": true,
+        "view_engineering_budget": true,
+        "view_other_salaries": false,
+        "view_travel_policy": true,
+        "submit_expenses": true,
+        "view_all_expenses": false,
+        "view_hr_data": false,
+        "view_financial_reports": false
+      }
+    },
+    "manager": {
+      "description": "Team manager or director",
+      "permissions": {
+        "view_employee_directory": true,
+        "view_project_details": true,
+        "view_own_salary": true,
+        "view_own_benefits": true,
+        "view_engineering_budget": true,
+        "view_other_salaries": true,
+        "view_travel_policy": true,
+        "submit_expenses": true,
+        "view_all_expenses": true,
+        "view_hr_data": false,
+        "view_financial_reports": false
+      }
+    },
+    "hr": {
+      "description": "HR team member",
+      "permissions": {
+        "view_employee_directory": true,
+        "view_project_details": false,
+        "view_own_salary": true,
+        "view_own_benefits": true,
+        "view_engineering_budget": false,
+        "view_other_salaries": true,
+        "view_travel_policy": true,
+        "submit_expenses": true,
+        "view_all_expenses": false,
+        "view_hr_data": true,
+        "view_financial_reports": false
+      }
+    },
+    "finance": {
+      "description": "Finance team member",
+      "permissions": {
+        "view_employee_directory": true,
+        "view_project_details": true,
+        "view_own_salary": true,
+        "view_own_benefits": true,
+        "view_engineering_budget": true,
+        "view_other_salaries": false,
+        "view_travel_policy": true,
+        "submit_expenses": true,
+        "view_all_expenses": true,
+        "view_hr_data": false,
+        "view_financial_reports": true
+      }
+    },
+    "executive": {
+      "description": "C-suite or VP",
+      "permissions": {
+        "view_employee_directory": true,
+        "view_project_details": true,
+        "view_own_salary": true,
+        "view_own_benefits": true,
+        "view_engineering_budget": true,
+        "view_other_salaries": true,
+        "view_travel_policy": true,
+        "submit_expenses": true,
+        "view_all_expenses": true,
+        "view_hr_data": true,
+        "view_financial_reports": true
+      }
+    }
+  },
+  "sensitive_fields": {
+    "salary": {
+      "description": "Employee salary",
+      "visibility": [
+        "executive",
+        "hr",
+        "finance"
+      ],
+      "audit_log": true
+    },
+    "ssn": {
+      "description": "Social Security Number",
+      "visibility": [
+        "hr",
+        "finance"
+      ],
+      "audit_log": true,
+      "redact": true
+    },
+    "address": {
+      "description": "Home address",
+      "visibility": [
+        "hr",
+        "executive"
+      ],
+      "audit_log": true
+    },
+    "compensation": {
+      "description": "Salary, bonus, stock options",
+      "visibility": [
+        "executive",
+        "finance"
+      ],
+      "audit_log": true
+    },
+    "performance_review": {
+      "description": "Performance ratings",
+      "visibility": [
+        "manager",
+        "hr",
+        "executive"
+      ],
+      "audit_log": true
+    }
+  }
+}
