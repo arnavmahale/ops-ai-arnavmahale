@@ -39,12 +39,12 @@ see each sensitive field and document-sensitivity level.
 - `filter_documents` / `log_access` — filter a doc list by role and append a
   timestamped entry to the audit log for every decision.
 
-**Where these are wired in (so the audit log actually records real access):**
-`can_view_field` runs inside `redact_response` on the final answer, and
-`can_view_document` runs inside `filter_documents`, which the `PolicySearchTool`
-calls on every search to drop documents the role may not see **before** the LLM
-sees them. Both paths call `log_access`, so the audit trail reflects genuine
-document- and field-level decisions, not just unit-test calls.
+These run on the live query path, not just in isolation: `can_view_field` runs
+inside `redact_response` on the final answer, and `can_view_document` runs inside
+`filter_documents`, which `PolicySearchTool` calls on every search to drop
+documents the role may not see **before** the LLM sees them. Both call
+`log_access`, so the audit trail reflects every real document- and field-level
+decision the agent makes.
 
 **Why a deterministic redactor?** The LLM *sometimes* self-censors and sometimes
 doesn't — it is not a reliable security control. `redact_response` is a
@@ -159,28 +159,27 @@ The pre-LLM guardrails (rate, budget) never spend tokens on a blocked request,
 and the post-LLM redactor guarantees sensitive data is removed even when the
 model would have leaked it.
 
-## Architectural choices (per TA guidance)
+## Architectural choices
 
-The starter is a scaffold; a few design decisions were needed for full
-functionality:
+A few decisions beyond the starter scaffold were needed for full functionality:
 
 1. **`user_id` on `query()`** — `Agent.query(user_query, user_id, user_role)`.
    `user_id` drives rate limiting and budget tracking (a *who*), separate from
    `user_role` (a *what-they-may-see*).
 2. **Document filtering before the LLM** — `PolicySearchTool` runs
    `filter_documents` (→ `can_view_document`) so an engineer's search never even
-   retrieves Confidential documents. This is access control applied *before* the
-   model, which is stronger than only redacting the final answer.
-3. **A working audit log** — because `can_view_document` (document filtering) and
-   `can_view_field` (final-answer redaction) are both on the live query path and
-   both call `log_access`, the audit trail captures real decisions. Example from
-   a single engineer policy query: 74 document decisions logged, 53 Confidential
-   docs denied, plus the sensitive-field redaction checks. `Agent.get_audit_log()`
+   retrieves Confidential documents. Applying access control *before* the model
+   is stronger than only redacting the final answer.
+3. **A working audit log** — since `can_view_document` (document filtering) and
+   `can_view_field` (final-answer redaction) both sit on the live query path and
+   both call `log_access`, the audit trail captures real decisions. A single
+   engineer policy query logs 74 document decisions, 53 of them Confidential
+   denials, plus the sensitive-field redaction checks; `Agent.get_audit_log()`
    exposes the trail.
 
-Final-answer redaction is kept as a defense-in-depth backstop even though
-documents are pre-filtered, since the employee-lookup path can still surface a
-sensitive value the role shouldn't see.
+I kept final-answer redaction as a defense-in-depth backstop even with documents
+pre-filtered, since the employee-lookup path can still surface a sensitive value
+the role shouldn't see.
 
 ## Note on the model
 
