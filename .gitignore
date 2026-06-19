@@ -24,9 +24,10 @@ week4/data/
 # Week 4 metrics JSON outputs (CI artifacts, not source)
 week4/metrics-*.json
 week4/drift-findings*.json
-# Week 5: do NOT commit the 50MB SQLite DB (comes from the course repo). Keep the
-# small JSON data files so policy/expense tools remain runnable from the repo.
+# Week 5 / 6: do NOT commit the 50MB SQLite DB (comes from the course repo). Keep
+# the small JSON data files so policy/expense tools remain runnable from the repo.
 week5/data/techcorp.db
+week6/data/techcorp.db
 # Root-level submission staging (was used as a one-time scratch dir)
 /submission/
 # Per-week submission/ folders ARE committed as a record of what was uploaded to Canvas.
