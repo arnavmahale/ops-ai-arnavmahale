@@ -28,6 +28,7 @@ week4/drift-findings*.json
 # the small JSON data files so policy/expense tools remain runnable from the repo.
 week5/data/techcorp.db
 week6/data/techcorp.db
+week7/data/techcorp.db
 # Root-level submission staging (was used as a one-time scratch dir)
 /submission/
 # Per-week submission/ folders ARE committed as a record of what was uploaded to Canvas.
