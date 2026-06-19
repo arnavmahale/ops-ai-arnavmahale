@@ -141,18 +141,21 @@ class EmployeeLookupTool(Tool):
 class PolicySearchTool(Tool):
     """Search policy documents by keyword."""
 
-    def __init__(self):
+    def __init__(self, access_controller=None):
         super().__init__(
             "policy_search", "Search policy documents by keyword or topic"
         )
         # Load documents once, at construction.
         with open(os.path.join(DATA_DIR, "documents.json")) as f:
             self.documents = json.load(f)
+        # Optional Week 6 guardrail: when set, documents are filtered by the
+        # caller's role (via can_view_document) BEFORE the LLM ever sees them.
+        self.access_controller = access_controller
 
     # very small stopword list so phrases like "the travel policy" still match
     _STOPWORDS = {"the", "a", "an", "of", "for", "is", "what", "and", "to", "on"}
 
-    def execute(self, query: str, limit: int = 5) -> str:
+    def execute(self, query: str, limit: int = 5, user_role: str = None) -> str:
         """Return up to `limit` documents most relevant to `query`.
 
         We score each document by how many distinct query words appear in its
@@ -160,10 +163,22 @@ class PolicySearchTool(Tool):
         Word-level scoring means a phrase like "travel policy" still finds the
         "Travel and Expense Policy" doc even though that exact phrase never
         appears verbatim. Each hit returns title + a 500-char snippet.
+
+        Access control: if an access_controller and user_role are present, the
+        document set is first filtered by sensitivity for that role. This is
+        access control *before* the LLM and records each decision in the audit
+        log via can_view_document.
         """
         try:
             if not query:
                 return "No query provided"
+
+            # Role-based document filtering (pre-LLM) + audit logging.
+            candidates = self.documents
+            if self.access_controller is not None and user_role:
+                candidates = self.access_controller.filter_documents(
+                    user_role, self.documents
+                )
 
             words = [
                 w
@@ -174,7 +189,7 @@ class PolicySearchTool(Tool):
                 words = [query.lower()]
 
             scored = []
-            for doc in self.documents:
+            for doc in candidates:
                 title = doc.get("title", "").lower()
                 content = doc.get("content", "").lower()
                 score = sum(
@@ -252,16 +267,17 @@ class Agent:
 
         self.client = genai.Client(api_key=self.api_key)
 
-        self.tools = {
-            "employee_lookup": EmployeeLookupTool(db_path),
-            "policy_search": PolicySearchTool(),
-            "expense_query": ExpenseQueryTool(),
-        }
-
-        # Week 6 guardrails.
+        # Week 6 guardrails (build the access controller first so the
+        # policy-search tool can use it to filter documents by role).
         self.access_controller = AccessController("data/access_control.json")
         self.rate_limiter = RateLimiter(max_queries_per_minute=30)
         self.cost_enforcer = CostEnforcer()
+
+        self.tools = {
+            "employee_lookup": EmployeeLookupTool(db_path),
+            "policy_search": PolicySearchTool(self.access_controller),
+            "expense_query": ExpenseQueryTool(),
+        }
 
         # Running metrics
         self.token_count = 0
@@ -394,6 +410,10 @@ If NO tool is needed, just answer the question directly in plain text."""
 
             # --- Tool execution --------------------------------------------
             if tool_name and tool_name in self.tools:
+                # policy_search applies role-based document filtering, so it
+                # needs to know the caller's role.
+                if tool_name == "policy_search":
+                    args.setdefault("user_role", user_role)
                 tool_result = self.tools[tool_name].execute(**args)
                 logger.info(f"Called tool '{tool_name}' with args {args}")
 
@@ -509,6 +529,10 @@ If NO tool is needed, just answer the question directly in plain text."""
             "blocked_queries": self.blocked_queries,
         }
 
+    def get_audit_log(self) -> list:
+        """Return the access-control audit trail (document + field decisions)."""
+        return self.access_controller.get_audit_log()
+
 
 # ---------------------------------------------------------------------------
 # TASK 6: Test
@@ -577,6 +601,18 @@ if __name__ == "__main__":
                          user_role="engineer"))
 
         print(f"\n=== Metrics ===\n{agent.get_metrics()}")
+
+        # ---- 5. Monitoring: audit log -------------------------------------
+        # can_view_document (via policy_search filtering) and can_view_field
+        # (via redaction) both write here, so the trail reflects real access.
+        audit = agent.get_audit_log()
+        print(f"\n=== Audit log ({len(audit)} entries; showing decisions) ===")
+        denied = [e for e in audit if not e["allowed"]]
+        allowed_docs = [e for e in audit if e["allowed"]]
+        print(f"  allowed: {len(allowed_docs)}   denied: {len(denied)}")
+        for e in denied[:6]:
+            tgt = e["field"] or e["resource"]
+            print(f"  DENY  role={e['role']:<9} {e['resource']:<10} {tgt}")
 
     except Exception as e:
         print(f"Error: {e}")
